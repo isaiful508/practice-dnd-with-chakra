@@ -7,12 +7,12 @@ import {
 } from '@chakra-ui/react'
 import { 
   DndContext, 
-  DragOverlay, 
-  PointerSensor, 
-  useSensor, 
-  useSensors 
+  DragOverlay,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  closestCorners,
 } from '@dnd-kit/core'
-import { arrayMove } from '@dnd-kit/sortable'
 import { FiPlus } from 'react-icons/fi'
 import Column from './Column'
 import TaskCard from './TaskCard'
@@ -22,13 +22,15 @@ import { useBoard } from '../context/BoardContext'
 const Board = ({ isMobile }) => {
   const { 
     boardData, 
-    moveTask, 
+    moveTask,
     reorderColumn,
+    reorderTaskInColumn,
     searchTerm
   } = useBoard()
   
   const [activeTask, setActiveTask] = useState(null)
   const [activeColumn, setActiveColumn] = useState(null)
+  const [lastOverId, setLastOverId] = useState(null)
   const { isOpen, onOpen, onClose } = useDisclosure()
   
   const sensors = useSensors(
@@ -38,6 +40,13 @@ const Board = ({ isMobile }) => {
       },
     })
   )
+
+  const findContainer = (id) => {
+    if (id in boardData.tasks) {
+      return boardData.tasks[id].columnId
+    }
+    return id
+  }
 
   const handleDragStart = (event) => {
     const { active } = event
@@ -50,6 +59,24 @@ const Board = ({ isMobile }) => {
     }
   }
 
+  const handleDragOver = (event) => {
+    const { active, over } = event
+    
+    if (!over) return
+
+    const activeId = active.id
+    const overId = over.id
+
+    if (activeId.startsWith('task-')) {
+      const activeContainer = findContainer(activeId)
+      const overContainer = findContainer(overId)
+      
+      if (activeContainer !== overContainer) {
+        setLastOverId(overContainer)
+      }
+    }
+  }
+
   const handleDragEnd = (event) => {
     const { active, over } = event
     
@@ -59,52 +86,29 @@ const Board = ({ isMobile }) => {
       return
     }
     
-    if (active.id.startsWith('task-') && over.id.startsWith('column-')) {
-      const taskId = active.id
-      const task = boardData.tasks[taskId]
-      const sourceColumnId = task.columnId
-      const destinationColumnId = over.id
+    if (active.id.startsWith('task-')) {
+      const activeContainer = findContainer(active.id)
+      const overContainer = findContainer(over.id)
       
-      if (sourceColumnId !== destinationColumnId) {
-        moveTask(
-          taskId,
-          sourceColumnId,
-          destinationColumnId,
-          boardData.columns.find(col => col.id === destinationColumnId).taskIds.length
-        )
+      if (activeContainer !== overContainer) {
+        const activeIndex = boardData.columns.find(col => col.id === activeContainer)
+          .taskIds.indexOf(active.id)
+        const overIndex = over.id.startsWith('task-')
+          ? boardData.columns.find(col => col.id === overContainer)
+              .taskIds.indexOf(over.id)
+          : boardData.columns.find(col => col.id === overContainer)
+              .taskIds.length
+
+        moveTask(active.id, activeContainer, overContainer, overIndex)
+      } else if (over.id.startsWith('task-') && active.id !== over.id) {
+        const column = boardData.columns.find(col => col.id === activeContainer)
+        const oldIndex = column.taskIds.indexOf(active.id)
+        const newIndex = column.taskIds.indexOf(over.id)
+        
+        reorderTaskInColumn(activeContainer, oldIndex, newIndex)
       }
     }
     
-    if (active.id.startsWith('task-') && over.id.startsWith('task-')) {
-      const activeTaskId = active.id
-      const overTaskId = over.id
-      const activeTask = boardData.tasks[activeTaskId]
-      const overTask = boardData.tasks[overTaskId]
-      
-      if (activeTask.columnId === overTask.columnId) {
-        const columnId = activeTask.columnId
-        const column = boardData.columns.find(col => col.id === columnId)
-        const oldIndex = column.taskIds.indexOf(activeTaskId)
-        const newIndex = column.taskIds.indexOf(overTaskId)
-        
-        if (oldIndex !== newIndex) {
-          const newTaskIds = arrayMove(column.taskIds, oldIndex, newIndex)
-          
-          const updatedColumns = boardData.columns.map(col => 
-            col.id === columnId ? { ...col, taskIds: newTaskIds } : col
-          )
-          
-        }
-      } else {
-        const sourceColumnId = activeTask.columnId
-        const destinationColumnId = overTask.columnId
-        const destinationColumn = boardData.columns.find(col => col.id === destinationColumnId)
-        const newIndex = destinationColumn.taskIds.indexOf(overTaskId)
-        
-        moveTask(activeTaskId, sourceColumnId, destinationColumnId, newIndex)
-      }
-    }
-
     if (active.id.startsWith('column-') && over.id.startsWith('column-')) {
       const activeColumnId = active.id
       const overColumnId = over.id
@@ -119,6 +123,7 @@ const Board = ({ isMobile }) => {
     
     setActiveTask(null)
     setActiveColumn(null)
+    setLastOverId(null)
   }
 
   const filteredColumns = boardData.columns.map(column => {
@@ -150,7 +155,9 @@ const Board = ({ isMobile }) => {
       
       <DndContext
         sensors={sensors}
+        collisionDetection={closestCorners}
         onDragStart={handleDragStart}
+        onDragOver={handleDragOver}
         onDragEnd={handleDragEnd}
       >
         <Flex 

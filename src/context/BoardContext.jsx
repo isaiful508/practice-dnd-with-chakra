@@ -230,7 +230,7 @@ export const BoardProvider = ({ children }) => {
       const sourceTaskIds = [...sourceColumn.taskIds]
       const sourceIndex = sourceTaskIds.indexOf(taskId)
       sourceTaskIds.splice(sourceIndex, 1)
-
+      
       const destinationColumn = prev.columns.find(col => col.id === destinationColumnId)
       const destinationTaskIds = [...destinationColumn.taskIds]
       destinationTaskIds.splice(newIndex, 0, taskId)
@@ -260,6 +260,24 @@ export const BoardProvider = ({ children }) => {
     })
   }
 
+  const reorderTaskInColumn = (columnId, oldIndex, newIndex) => {
+    setBoardData(prev => {
+      const column = prev.columns.find(col => col.id === columnId)
+      const newTaskIds = [...column.taskIds]
+      const [movedTask] = newTaskIds.splice(oldIndex, 1)
+      newTaskIds.splice(newIndex, 0, movedTask)
+      
+      const updatedColumns = prev.columns.map(col =>
+        col.id === columnId ? { ...col, taskIds: newTaskIds } : col
+      )
+      
+      return {
+        ...prev,
+        columns: updatedColumns
+      }
+    })
+  }
+
   const reorderColumn = (sourceIndex, destinationIndex) => {
     setBoardData(prev => {
       const columns = [...prev.columns]
@@ -284,6 +302,7 @@ export const BoardProvider = ({ children }) => {
     updateColumn,
     deleteColumn,
     moveTask,
+    reorderTaskInColumn,
     reorderColumn
   }
 
